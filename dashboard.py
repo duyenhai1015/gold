@@ -1,4 +1,4 @@
-# dashboard.py
+# dashboard.py (V5.4 - Khôi phục lỗi gốc + DOJI mặc định)
 import streamlit as st
 import pandas as pd
 from pymongo import MongoClient
@@ -31,6 +31,7 @@ def connect_and_load_data():
     data = list(collection.find({}, {"_id": 0}))
     
     if not data:
+        # SỬA: TRẢ LẠI THÔNG BÁO LỖI GỐC THEO YÊU CẦU
         st.warning("⚠️ Chưa có dữ liệu. Vui lòng chạy 'backfill_data.py' và 'scraper.py'.")
         return pd.DataFrame()
         
@@ -45,7 +46,7 @@ def connect_and_load_data():
     df["Ngày"] = pd.to_datetime(df["Ngày"], format="%Y-m-%d", errors="coerce")
     
     if 'Thời gian cập nhật' in df.columns:
-        vietnam_tz = ZoneInfo("Asia/Ho_Chi_Minh") # <-- Đã sửa lỗi cú pháp
+        vietnam_tz = ZoneInfo("Asia/Ho_Chi_Minh")
         df["Thời gian cập nhật"] = pd.to_datetime(df["Thời gian cập nhật"], errors='coerce').dt.tz_localize(ZoneInfo("UTC"))
         df["Thời gian cập nhật (VN)"] = df["Thời gian cập nhật"].dt.tz_convert(vietnam_tz)
 
@@ -142,9 +143,7 @@ def run_future_forecast(model, df_ml, features_list):
 st.set_page_config(page_title="Gold Price Dashboard", layout="wide")
 df_all = connect_and_load_data()
 
-if df_all.empty:
-    st.warning("⚠️ Lỗi (Cache): Vui lòng Clear Cache.")
-    st.stop()
+# Dòng "if df_all.empty" đã được xử lý bên trong hàm connect_and_load_data
 
 # ==========================
 # 🧩 BỘ LỌC SIDEBAR (SỬA Ở ĐÂY)
@@ -153,9 +152,8 @@ st.sidebar.header("🎛️ Bộ lọc dữ liệu")
 available_brands = list(df_all["Thương hiệu"].unique()) # Chuyển sang list
 
 # --- SỬA ĐỔI: Đặt DOJI làm mặc định ---
-default_index = 0 # Mặc định là 0 (thường là PNJ)
+default_index = 0 
 if "DOJI" in available_brands:
-    # Tìm xem "DOJI" nằm ở vị trí (index) nào trong danh sách
     default_index = available_brands.index("DOJI")
 # --- Hết sửa đổi ---
 
@@ -220,7 +218,7 @@ else:
     st.markdown(f"<div class='main-header'>🏆 GOLD PRICE DASHBOARD - VIETNAM 🇻🇳</div>", unsafe_allow_html=True)
 
 # ==========================
-# 📂 LỌC DỮ LIỆU
+# 📂 LỌC DỮ LIỆN
 # ==========================
 df_brand_filtered = df_all[df_all["Thương hiệu"] == source].copy()
 available_types = sorted(df_brand_filtered["Loại vàng"].unique())
@@ -268,7 +266,6 @@ with col3: st.metric("Giá bán", f"{latest['Bán ra']:,.0f} VND")
 # ==========================
 df_final["Chênh lệch"] = df_final["Bán ra"] - df_final["Mua vào"]
 
-# SỬA: Xóa 'So sánh' và chuyển 'ML' ra cuối
 tab_buy, tab_sell, tab_spread, tab_data, tab_ml = st.tabs([
     "📈 Giá mua", 
     "📊 Giá bán",
@@ -295,7 +292,7 @@ with tab_spread:
                          hover_data=['Mua vào', 'Bán ra'], color_discrete_sequence=[theme_color])
     st.plotly_chart(fig_spread, use_container_width=True)
 
-# --- Tab: Dữ liệu chi tiết  ---
+# --- Tab: Dữ liệu chi tiết (ĐÃ SỬA LỖI KEYERROR) ---
 with tab_data:
     st.header(f"Dữ liệu chi tiết (đã lọc cho {source})")
     
