@@ -1,4 +1,4 @@
-#dashboard
+# dashboard.py
 import streamlit as st
 import pandas as pd
 from pymongo import MongoClient
@@ -42,10 +42,10 @@ def connect_and_load_data():
             .replace("", "0").astype(float)
         )
     
-    df["Ngày"] = pd.to_datetime(df["Ngày"], format="%Y-%m-%d", errors="coerce")
+    df["Ngày"] = pd.to_datetime(df["Ngày"], format="%Y-m-%d", errors="coerce")
     
     if 'Thời gian cập nhật' in df.columns:
-        vietnam_tz = ZoneInfo("Asia/Ho_Chi_Minh")
+        vietnam_tz = ZoneInfo("Asia/Ho_Chi_Minh") # <-- Đã sửa lỗi cú pháp
         df["Thời gian cập nhật"] = pd.to_datetime(df["Thời gian cập nhật"], errors='coerce').dt.tz_localize(ZoneInfo("UTC"))
         df["Thời gian cập nhật (VN)"] = df["Thời gian cập nhật"].dt.tz_convert(vietnam_tz)
 
@@ -147,11 +147,23 @@ if df_all.empty:
     st.stop()
 
 # ==========================
-# 🧩 BỘ LỌC SIDEBAR
+# 🧩 BỘ LỌC SIDEBAR (SỬA Ở ĐÂY)
 # ==========================
 st.sidebar.header("🎛️ Bộ lọc dữ liệu")
-available_brands = df_all["Thương hiệu"].unique()
-source = st.sidebar.selectbox("🪙 Chọn thương hiệu vàng:", available_brands)
+available_brands = list(df_all["Thương hiệu"].unique()) # Chuyển sang list
+
+# --- SỬA ĐỔI: Đặt DOJI làm mặc định ---
+default_index = 0 # Mặc định là 0 (thường là PNJ)
+if "DOJI" in available_brands:
+    # Tìm xem "DOJI" nằm ở vị trí (index) nào trong danh sách
+    default_index = available_brands.index("DOJI")
+# --- Hết sửa đổi ---
+
+source = st.sidebar.selectbox(
+    "🪙 Chọn thương hiệu vàng:", 
+    available_brands, 
+    index=default_index # <-- Đặt DOJI làm mặc định
+)
 
 # ==========================
 # 🎨 THEME & LOGO
@@ -283,31 +295,27 @@ with tab_spread:
                          hover_data=['Mua vào', 'Bán ra'], color_discrete_sequence=[theme_color])
     st.plotly_chart(fig_spread, use_container_width=True)
 
-# --- Tab: Dữ liệu chi tiết (ĐÃ SỬA LỖI KEYERROR) ---
+# --- Tab: Dữ liệu chi tiết  ---
 with tab_data:
     st.header(f"Dữ liệu chi tiết (đã lọc cho {source})")
     
-    # 1. Bắt đầu với các cột chúng ta BIẾT là luôn tồn tại
     columns_to_show = ["Thương hiệu", "Ngày", "Loại vàng", "Mua vào", "Bán ra", "Chênh lệch"]
     
     if 'Thời gian cập nhật' in df_final.columns:
         df_display = df_final.sort_values(by="Thời gian cập nhật", ascending=False).copy()
         
-        # 2. Thêm cột 'Giờ VN' NẾU nó tồn tại
         if 'Thời gian cập nhật (VN)' in df_display.columns:
              df_display["Giờ VN"] = df_display["Thời gian cập nhật (VN)"].dt.strftime('%d-%m-%Y %H:%M:%S')
-             columns_to_show.append("Giờ VN") # Thêm vào danh sách
+             columns_to_show.append("Giờ VN") 
         
-        # 3. Thêm cột 'source' NẾU nó tồn tại
         if 'source' in df_display.columns:
-            columns_to_show.append("source") # Thêm vào danh sách
+            columns_to_show.append("source") 
             
         st.dataframe(df_display[columns_to_show], use_container_width=True)
 
     else:
-        # 4. SỬA LỖI CHÍNH TẢ: "Thorough" -> "Thương hiệu"
         df_display = df_final.sort_values(by="Ngày", ascending=False)
-        st.dataframe(df_display[columns_to_show], use_container_width=True) # Dùng lại danh sách an toàn
+        st.dataframe(df_display[columns_to_show], use_container_width=True) 
 
 # --- Tab: Dự báo (ML) (Bây giờ nằm ở cuối) ---
 with tab_ml:
@@ -349,6 +357,3 @@ with tab_ml:
             fig_forecast.update_traces(line=dict(color=theme_color), name='Giá thực tế')
             fig_forecast.add_scatter(x=df_forecast['Ngày'], y=df_forecast['Dự báo'], mode='lines', name=f'Dự báo ({best_name})', line=dict(color='#FF5733', dash='dot'))
             st.plotly_chart(fig_forecast, use_container_width=True)
-
-# --- KHỐI CODE BỊ XÓA (TAB 'SO SÁNH THƯƠNG HIỆU' ĐÃ BỊ XÓA) ---
-
