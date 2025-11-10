@@ -1,5 +1,4 @@
-
-#dashboard
+# dashboard.py 
 import streamlit as st
 import pandas as pd
 from pymongo import MongoClient
@@ -46,7 +45,7 @@ def connect_and_load_data():
     df["Ngày"] = pd.to_datetime(df["Ngày"], format="%Y-%m-%d", errors="coerce")
     
     if 'Thời gian cập nhật' in df.columns:
-        vietnam_tz = ZoneInfo("Asia/Ho_Chi_Minh")
+        vietnam_tz = ZoneInfo("Asia/Ho_Chi"Minh")
         df["Thời gian cập nhật"] = pd.to_datetime(df["Thời gian cập nhật"], errors='coerce').dt.tz_localize(ZoneInfo("UTC"))
         df["Thời gian cập nhật (VN)"] = df["Thời gian cập nhật"].dt.tz_convert(vietnam_tz)
 
@@ -352,4 +351,3 @@ with tab_ml:
             st.plotly_chart(fig_forecast, use_container_width=True)
 
 # --- KHỐI CODE BỊ XÓA (TAB 'SO SÁNH THƯƠNG HIỆU' ĐÃ BỊ XÓA) ---
-
