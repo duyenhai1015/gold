@@ -1,12 +1,12 @@
-# dashboard.py (V5.2 - Xóa So sánh, ML ra sau + Sửa lỗi KeyError)
+# dashboard.py 
 import streamlit as st
 import pandas as pd
 from pymongo import MongoClient
 import plotly.express as px
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
-import os 
-import base64 
+import os
+import base64
 import numpy as np
 
 # Import các thư viện ML
@@ -27,12 +27,12 @@ def connect_and_load_data():
     
     client = MongoClient(MONGO_URI)
     db = client["gold_pipeline"]
-    collection = db["gold_prices"] 
+    collection = db["gold_prices"]
     data = list(collection.find({}, {"_id": 0}))
     
     if not data:
         st.warning("⚠️ Chưa có dữ liệu. Vui lòng chạy 'backfill_data.py' và 'scraper.py'.")
-        return pd.DataFrame()
+        return pd.DataFrame() # Trả về DF rỗng
         
     df = pd.DataFrame(data)
     
@@ -53,147 +53,122 @@ def connect_and_load_data():
     return df
 
 # ==========================
-# 🤖 CÁC HÀM MACHINE LEARNING (LOGIC V5)
+# 🤖 CÁC HÀM MACHINE LEARNING
 # ==========================
 def create_features(df):
-    """Tạo đặc trưng từ cột Ngày cho mô hình ML."""
     df_feat = df[['Ngày', 'Bán ra']].copy()
-    # Chỉ lấy giá trị cuối cùng mỗi ngày
-    df_feat = df_feat.sort_values("Ngày").drop_duplicates("Ngày", keep="last")
+    # SỬA: Dùng logic V5 (ưu tiên 'Thời gian cập nhật')
+    if 'Thời gian cập nhật' in df.columns:
+        df_feat = df.sort_values("Thời gian cập nhật").drop_duplicates("Ngày", keep="last").copy()
+    else:
+        df_feat = df.sort_values("Ngày").drop_duplicates("Ngày", keep="last").copy()
     
     df_feat['ngày_trong_tuần'] = df_feat['Ngày'].dt.dayofweek
     df_feat['tháng'] = df_feat['Ngày'].dt.month
     df_feat['ngày_trong_năm'] = df_feat['Ngày'].dt.dayofyear
-    
-    # Tạo đặc trưng trễ (Lag features)
     df_feat['giá_trễ_1_ngày'] = df_feat['Bán ra'].shift(1)
     df_feat['giá_trễ_7_ngày'] = df_feat['Bán ra'].shift(7)
-    
-    # Tạo đặc trưng trượt (Rolling features)
     df_feat['tb_trượt_7_ngày'] = df_feat['Bán ra'].rolling(window=7).mean().shift(1)
-    
-    # Xóa các dòng NaN (do shift/rolling)
     df_feat = df_feat.dropna()
-    
     return df_feat
 
-def run_model_evaluation(df_ml):
-    """Chạy train/test split và đánh giá 3 mô hình."""
-    
-    # 1. Định nghĩa đặc trưng (X) và mục tiêu (y)
+def run_model_evaluation(df_ml, theme_color): # SỬA: Thêm theme_color
     FEATURES = ['ngày_trong_tuần', 'tháng', 'ngày_trong_năm', 'giá_trễ_1_ngày', 'giá_trễ_7_ngày', 'tb_trượt_7_ngày']
     TARGET = 'Bán ra'
-
-    # 2. Train/Test Split (80% train, 20% test)
     split_index = int(len(df_ml) * 0.8)
     train_df = df_ml.iloc[:split_index]
     test_df = df_ml.iloc[split_index:]
-
     X_train, y_train = train_df[FEATURES], train_df[TARGET]
     X_test, y_test = test_df[FEATURES], test_df[TARGET]
-
-    # 3. Định nghĩa các mô hình
     models = {
         "Linear Regression": LinearRegression(),
         "Random Forest": RandomForestRegressor(n_estimators=100, random_state=42, n_jobs=-1),
-        "XGBoost": XGBRegressor(n_estimators=100, random_state=42, n_jobs=-1, early_stopping_rounds=10)
+        "XGBrst": XGBRegressor(n_estimators=100, random_state=42, n_jobs=-1, early_stopping_rounds=10)
     }
-
     scores = {}
     test_predictions = {}
-
-    # 4. Huấn luyện và Đánh giá
     for name, model in models.items():
-        st.write(f"Đang huấn luyện {name}...")
-        
-        # XGBoost cần eval_set để early stopping
         if name == "XGBoost":
             model.fit(X_train, y_train, eval_set=[(X_test, y_test)], verbose=False)
         else:
             model.fit(X_train, y_train)
-            
         preds = model.predict(X_test)
         mae = mean_absolute_error(y_test, preds)
         scores[name] = mae
         test_predictions[name] = preds
-
-    # 5. Tìm mô hình tốt nhất
     best_model_name = min(scores, key=scores.get)
     best_model_instance = models[best_model_name]
+    df_plot = pd.DataFrame({'Ngày': test_df['Ngày'], 'Giá trị thực tế': y_test, 'Giá trị dự báo (Tốt nhất)': test_predictions[best_model_name]})
     
-    # 6. Trực quan hóa kết quả Test
-    df_plot = pd.DataFrame({
-        'Ngày': test_df['Ngày'],
-        'Giá trị thực tế': y_test,
-        'Giá trị dự báo (Tốt nhất)': test_predictions[best_model_name]
-    })
-    fig = px.line(df_plot, x='Ngày', y=['Giá trị thực tế', 'Giá trị dự báo (Tốt nhất)'], 
+    # SỬA: Dùng theme_color
+    fig = px.line(df_plot, x='Ngày', y=['Giá trị thực tế', 'Giá trị dự báo (Tốt nhất)'],
                   title=f'So sánh trên tập Test (Mô hình tốt nhất: {best_model_name})',
-                  markers=True)
-    
+                  markers=True, color_discrete_map={
+                      'Giá trị thực tế': theme_color,
+                      'Giá trị dự báo (Tốt nhất)': '#FF5733'
+                  })
     return scores, best_model_name, best_model_instance, fig
 
 def run_future_forecast(model, df_ml, features_list):
-    """Dùng model tốt nhất để dự báo 30 ngày tương lai."""
-    
-    # 1. Lấy 30 ngày dữ liệu cuối cùng để làm mồi
-    # (Cần ít nhất 7 ngày, nhưng 30 ngày ổn định hơn)
     recent_data = df_ml.iloc[-30:].copy()
-    
     future_predictions = []
-    
-    for i in range(30): # Dự báo 30 ngày
-        # 2. Lấy dòng cuối cùng (dữ liệu mới nhất)
+    for i in range(30):
         last_row = recent_data.iloc[-1]
-        
-        # 3. Tạo ngày tiếp theo
         next_date = last_row['Ngày'] + timedelta(days=1)
-        
-        # 4. Tạo đặc trưng cho ngày tiếp theo
         next_day_features = {
             'ngày_trong_tuần': next_date.dayofweek,
             'tháng': next_date.month,
             'ngày_trong_năm': next_date.dayofyear,
-            'giá_trễ_1_ngày': last_row['Bán ra'], # Giá hôm nay là lag1 của mai
-            'giá_trễ_7_ngày': recent_data.iloc[-6]['Bán ra'], # Lấy lag 7
-            'tb_trượt_7_ngày': recent_data.iloc[-7:]['Bán ra'].mean() # Lấy TB 7 ngày
+            'giá_trễ_1_ngày': last_row['Bán ra'],
+            'giá_trễ_7_ngày': recent_data.iloc[-6]['Bán ra'],
+            'tb_trượt_7_ngày': recent_data.iloc[-7:]['Bán ra'].mean()
         }
-        
-        # Biến đổi thành DataFrame 1 dòng
         X_future = pd.DataFrame([next_day_features])[features_list]
-        
-        # 5. Dự báo
         next_pred = model.predict(X_future)[0]
-        
-        # 6. Thêm vào danh sách dự báo
         future_predictions.append({'Ngày': next_date, 'Dự báo': next_pred})
-        
-        # 7. Cập nhật 'recent_data' (quan trọng!)
-        # Thêm dòng dự báo mới vào để dùng cho vòng lặp tiếp theo
         new_row = {'Ngày': next_date, 'Bán ra': next_pred, **next_day_features}
         recent_data = pd.concat([recent_data, pd.DataFrame([new_row])], ignore_index=True)
-
     df_forecast = pd.DataFrame(future_predictions)
     return df_forecast
+
 # ==========================
 # 🎨 CẤU HÌNH GIAO DIỆN
 # ==========================
 st.set_page_config(page_title="Gold Price Dashboard", layout="wide")
 df_all = connect_and_load_data()
 
-if df_all.empty:
-    st.warning("⚠️ Lỗi (Cache): Vui lòng Clear Cache.")
-    st.stop()
+# ==========================
+# 🧩 BỘ LỌC SIDEBAR (PHẢI NẰM ĐẦU)
+# ==========================
+st.sidebar.header("🎛️ Bộ lọc dữ liệu")
+available_brands = list(df_all["Thương hiệu"].unique())
+
+default_index = 0
+if "DOJI" in available_brands:
+    default_index = available_brands.index("DOJI")
+
+source = st.sidebar.selectbox(
+    "🪙 Chọn thương hiệu vàng:",
+    available_brands,
+    index=default_index
+)
+
+# THÊM "CẦU DAO AN TOÀN"
+# Nếu cache rỗng, df_all rỗng, available_brands rỗng, thì source = None
+if not source:
+    st.warning("⚠️ Đang tải dữ liệu (Lỗi Cache). Vui lòng nhấn 'Clear cache'.")
+    st.stop() # Dừng an toàn
 
 # ==========================
-# 🎨 THEME & LOGO
+# 🎨 THEME & LOGO (PHẢI NẰM SAU)
 # ==========================
 theme_data = {
     "PNJ": {"color": "#001F3F", "bg_light": "#E6EEF8", "logo": "logopnj.png"},
     "DOJI": {"color": "#B22222", "bg_light": "#FCECEC", "logo": "logodoji.png"},
     "SJC": {"color": "#CCAF66", "bg_light": "#FFF9E6", "logo": "logosjc.png"}
 }
-theme = theme_data.get(source.upper(), {"color": "#2E86C1", "bg_light": "#F4F6F8", "logo": ""})
+# Dòng này (trước đây là 196) bây giờ đã an toàn
+theme = theme_data.get(source.upper(), {"color": "#2E86C1", "bg_light": "#F4F6F8", "logo": ""}) 
 theme_color = theme["color"]
 bg_light = theme["bg_light"]
 logo_path = theme["logo"]
@@ -231,7 +206,7 @@ logo_base64 = load_logo_base64(logo_path)
 if logo_base64:
     st.markdown(f"""
         <div class="main-header">
-            <img src="data:image/png;base64,{logo_base64}" 
+            <img src="data:image/png;base64,{logo_base64}"
                  style="height:50px; margin-right:10px; vertical-align:middle; border-radius:8px;">
             GOLD PRICE DASHBOARD - VIETNAM 🇻🇳
         </div>
@@ -240,35 +215,34 @@ else:
     st.markdown(f"<div class='main-header'>🏆 GOLD PRICE DASHBOARD - VIETNAM 🇻🇳</div>", unsafe_allow_html=True)
 
 # ==========================
-# 🧩 BỘ LỌC SIDEBAR (Giữ nguyên)
+# 📂 LỌC DỮ LIỆU (Filter 2 & 3)
 # ==========================
-st.sidebar.header("Bộ lọc chính")
-available_brands = df_all["Thương hiệu"].unique()
-source = st.sidebar.selectbox("🪙 Chọn thương hiệu vàng:", available_brands)
 df_brand_filtered = df_all[df_all["Thương hiệu"] == source].copy()
-available_types = df_brand_filtered["Loại vàng"].unique()
-available_types.sort()
+available_types = sorted(df_brand_filtered["Loại vàng"].unique())
 gold_type = st.sidebar.selectbox("🎗️ Chọn loại vàng:", available_types)
 df_type_filtered = df_brand_filtered[df_brand_filtered["Loại vàng"] == gold_type].copy()
+
 if df_type_filtered.empty:
     st.warning(f"Không tìm thấy dữ liệu cho loại vàng: '{gold_type}'.")
-    st.stop() 
+    st.stop()
+
 min_date = df_type_filtered["Ngày"].min().to_pydatetime()
 max_date = df_type_filtered["Ngày"].max().to_pydatetime()
-date_range = st.sidebar.date_input(
-    "🗓️ Chọn khoảng ngày:",
-    (min_date, max_date),
-    min_value=min_date,
-    max_value=max_date
-)
+date_range = st.sidebar.date_input("🗓️ Chọn khoảng ngày:", (min_date, max_date), min_value=min_date, max_value=max_date)
+
 if len(date_range) != 2:
-    st.sidebar.error("Bạn phải chọn một khoảng ngày (bắt đầu và kết thúc).")
+    st.sidebar.error("Bạn phải chọn khoảng ngày (bắt đầu và kết thúc).")
     st.stop()
+
 start_date, end_date = date_range
 df_final = df_type_filtered[
-    (df_type_filtered["Ngày"] >= pd.to_datetime(start_date)) & 
+    (df_type_filtered["Ngày"] >= pd.to_datetime(start_date)) &
     (df_type_filtered["Ngày"] <= pd.to_datetime(end_date))
 ].sort_values(by="Ngày")
+
+if df_final.empty:
+    st.warning(f"Không tìm thấy dữ liệu cho '{gold_type}' trong khoảng ngày đã chọn.")
+    st.stop()
 
 # ==========================
 # 💎 GIÁ MỚI NHẤT
@@ -285,17 +259,16 @@ with col2: st.metric("Giá mua", f"{latest['Mua vào']:,.0f} VND")
 with col3: st.metric("Giá bán", f"{latest['Bán ra']:,.0f} VND")
 
 # ==========================
-# 📊 TABS (V5.2 - ĐÃ SẮP XẾP LẠI)
+# 📊 TABS
 # ==========================
 df_final["Chênh lệch"] = df_final["Bán ra"] - df_final["Mua vào"]
 
-# SỬA: Xóa 'So sánh' và chuyển 'ML' ra cuối
 tab_buy, tab_sell, tab_spread, tab_data, tab_ml = st.tabs([
-    "📈 Giá mua", 
+    "📈 Giá mua",
     "📊 Giá bán",
     "📉 Chênh lệch",
     "📋 Dữ liệu chi tiết",
-    "🤖 Dự báo (ML)" 
+    "🤖 Dự báo (ML)"
 ])
 
 # --- Tab: Giá Mua ---
@@ -316,46 +289,41 @@ with tab_spread:
                          hover_data=['Mua vào', 'Bán ra'], color_discrete_sequence=[theme_color])
     st.plotly_chart(fig_spread, use_container_width=True)
 
-# --- Tab: Dữ liệu chi tiết (ĐÃ SỬA LỖI KEYERROR) ---
+# --- Tab: Dữ liệu chi tiết (Sửa lỗi KeyError) ---
 with tab_data:
     st.header(f"Dữ liệu chi tiết (đã lọc cho {source})")
     
-    # 1. Bắt đầu với các cột chúng ta BIẾT là luôn tồn tại
     columns_to_show = ["Thương hiệu", "Ngày", "Loại vàng", "Mua vào", "Bán ra", "Chênh lệch"]
     
     if 'Thời gian cập nhật' in df_final.columns:
         df_display = df_final.sort_values(by="Thời gian cập nhật", ascending=False).copy()
         
-        # 2. Thêm cột 'Giờ VN' NẾU nó tồn tại
         if 'Thời gian cập nhật (VN)' in df_display.columns:
              df_display["Giờ VN"] = df_display["Thời gian cập nhật (VN)"].dt.strftime('%d-%m-%Y %H:%M:%S')
-             columns_to_show.append("Giờ VN") # Thêm vào danh sách
+             columns_to_show.append("Giờ VN")
         
-        # 3. Thêm cột 'source' NẾU nó tồn tại
         if 'source' in df_display.columns:
-            columns_to_show.append("source") # Thêm vào danh sách
+            columns_to_show.append("source")
             
         st.dataframe(df_display[columns_to_show], use_container_width=True)
 
     else:
-        # 4. SỬA LỖI CHÍNH TẢ: "Thorough" -> "Thương hiệu"
         df_display = df_final.sort_values(by="Ngày", ascending=False)
-        st.dataframe(df_display[columns_to_show], use_container_width=True) # Dùng lại danh sách an toàn
+        st.dataframe(df_display[columns_to_show], use_container_width=True)
 
-# --- Tab: Dự báo (ML) (Bây giờ nằm ở cuối) ---
+# --- Tab: Dự báo (ML) ---
 with tab_ml:
     st.header(f"Trung tâm Đánh giá & Dự báo Mô hình")
     st.info(f"Đang phân tích dữ liệu 'Bán ra' cho: {gold_type}")
     
-    # 1. Tạo đặc trưng
     df_ml = create_features(df_final)
     
-    if len(df_ml) < 20: # Cần đủ dữ liệu
+    if len(df_ml) < 20:
         st.warning("Cần ít nhất 20 ngày dữ liệu (sau khi lọc) để chạy so sánh mô hình.")
     else:
         with st.spinner("Đang huấn luyện 3 mô hình... (Có thể mất 1 phút)"):
-            # 2. Chạy đánh giá
-            scores, best_name, best_model, test_fig = run_model_evaluation(df_ml)
+            # SỬA: Phải truyền theme_color vào
+            scores, best_name, best_model, test_fig = run_model_evaluation(df_ml, theme_color) 
             
             st.subheader("1. Kết quả Đánh giá Mô hình (trên tập Test)")
             st.write("Chỉ số: MAE (Sai số Tuyệt đối Trung bình) - Càng thấp càng tốt.")
@@ -368,25 +336,20 @@ with tab_ml:
             st.success(f"Mô hình tối ưu được chọn: **{best_name}** (MAE: {scores[best_name]:,.0f} VND)")
             st.plotly_chart(test_fig, use_container_width=True)
 
-            # 3. Chạy dự báo tương lai
             st.subheader("2. Dự báo 30 ngày tới (dùng mô hình tốt nhất)")
             
-            # Tái huấn luyện model tốt nhất trên TOÀN BỘ DỮ LIỆU
             FEATURES = ['ngày_trong_tuần', 'tháng', 'ngày_trong_năm', 'giá_trễ_1_ngày', 'giá_trễ_7_ngày', 'tb_trượt_7_ngày']
             X_all, y_all = df_ml[FEATURES], df_ml['Bán ra']
             
             if best_name == "XGBoost":
-                 # XGBoost cần fit lại với thông số tối ưu
                  best_model.fit(X_all, y_all, eval_set=[(X_all, y_all)], verbose=False)
             else:
                  best_model.fit(X_all, y_all)
             
             df_forecast = run_future_forecast(best_model, df_ml, FEATURES)
 
-            # 4. Vẽ biểu đồ dự báo
             fig_forecast = px.line(df_final, x="Ngày", y="Bán ra", title=f"Giá BÁN (Lịch sử & Dự báo)", markers=True)
-            fig_forecast.add_scatter(x=df_forecast['Ngày'], y=df_forecast['Dự báo'], mode='lines', name=f'Dự báo ({best_name})')
+            # SỬA: Thêm màu cho biểu đồ
+            fig_forecast.update_traces(line=dict(color=theme_color), name='Giá thực tế')
+            fig_forecast.add_scatter(x=df_forecast['Ngày'], y=df_forecast['Dự báo'], mode='lines', name=f'Dự báo ({best_name})', line=dict(color='#FF5733', dash='dot'))
             st.plotly_chart(fig_forecast, use_container_width=True)
-
-# --- KHỐI CODE BỊ XÓA (TAB 'SO SÁNH THƯƠNG HIỆU' ĐÃ BỊ XÓA) ---
-
