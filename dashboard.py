@@ -1,4 +1,4 @@
-# dashboard.py (V5.1 - ML Nâng cao + Giao diện Theme + Bảo mật)
+#dashboard
 import streamlit as st
 import pandas as pd
 from pymongo import MongoClient
@@ -24,29 +24,28 @@ def connect_and_load_data():
     if not MONGO_URI:
         st.error("Lỗi: Biến môi trường MONGODB_ATLAS_URI chưa được thiết lập!")
         st.stop()
-
+    
     client = MongoClient(MONGO_URI)
     db = client["gold_pipeline"]
     collection = db["gold_prices"] 
     data = list(collection.find({}, {"_id": 0}))
-
+    
     if not data:
-        # Dòng này sẽ không chạy nữa vì dữ liệu đã có!
         st.warning("⚠️ Chưa có dữ liệu. Vui lòng chạy 'backfill_data.py' và 'scraper.py'.")
         return pd.DataFrame()
-
+        
     df = pd.DataFrame(data)
-
+    
     for col in ["Mua vào", "Bán ra"]:
         df[col] = (
             df[col].astype(str).str.replace(r"[^\d.]", "", regex=True)
             .replace("", "0").astype(float)
         )
-
+    
     df["Ngày"] = pd.to_datetime(df["Ngày"], format="%Y-%m-%d", errors="coerce")
-
+    
     if 'Thời gian cập nhật' in df.columns:
-        vietnam_tz = ZoneInfo("Asia/Ho_Chi_Minh")
+        vietnam_tz = ZoneInfo("Asia/Ho_Chi"Minh")
         df["Thời gian cập nhật"] = pd.to_datetime(df["Thời gian cập nhật"], errors='coerce').dt.tz_localize(ZoneInfo("UTC"))
         df["Thời gian cập nhật (VN)"] = df["Thời gian cập nhật"].dt.tz_convert(vietnam_tz)
 
@@ -101,22 +100,22 @@ def run_model_evaluation(df_ml, theme_color):
 
     best_model_name = min(scores, key=scores.get)
     best_model_instance = models[best_model_name]
-
+    
     df_plot = pd.DataFrame({'Ngày': test_df['Ngày'], 'Giá trị thực tế': y_test, 'Giá trị dự báo (Tốt nhất)': test_predictions[best_model_name]})
-
+    
     fig = px.line(df_plot, x='Ngày', y=['Giá trị thực tế', 'Giá trị dự báo (Tốt nhất)'], 
                   title=f'So sánh trên tập Test (Mô hình tốt nhất: {best_model_name})',
                   markers=True, color_discrete_map={
                       'Giá trị thực tế': theme_color,
                       'Giá trị dự báo (Tốt nhất)': '#FF5733'
                   })
-
+    
     return scores, best_model_name, best_model_instance, fig
 
 def run_future_forecast(model, df_ml, features_list):
     recent_data = df_ml.iloc[-30:].copy()
     future_predictions = []
-
+    
     for i in range(30):
         last_row = recent_data.iloc[-1]
         next_date = last_row['Ngày'] + timedelta(days=1)
@@ -141,12 +140,9 @@ def run_future_forecast(model, df_ml, features_list):
 # 🎨 CẤU HÌNH GIAO DIỆN
 # ==========================
 st.set_page_config(page_title="Gold Price Dashboard", layout="wide")
-
-# HÀM NÀY BÂY GIỜ SẼ THÀNH CÔNG
 df_all = connect_and_load_data()
 
 if df_all.empty:
-    # DÒNG LỖI SẼ KHÔNG BAO GIỜ CHẠY NỮA
     st.warning("⚠️ Lỗi (Cache): Vui lòng Clear Cache.")
     st.stop()
 
@@ -256,53 +252,97 @@ with col2: st.metric("Giá mua", f"{latest['Mua vào']:,.0f} VND")
 with col3: st.metric("Giá bán", f"{latest['Bán ra']:,.0f} VND")
 
 # ==========================
-# 📊 TABS
+# 📊 TABS (V5.2 - ĐÃ SẮP XẾP LẠI)
 # ==========================
 df_final["Chênh lệch"] = df_final["Bán ra"] - df_final["Mua vào"]
 
-tab_ml, tab_compare, tab_buy, tab_sell, tab_spread, tab_data = st.tabs([
-    "🤖 Dự báo (ML)", 
-    "📊 So sánh Thương hiệu", 
+# SỬA: Xóa 'So sánh' và chuyển 'ML' ra cuối
+tab_buy, tab_sell, tab_spread, tab_data, tab_ml = st.tabs([
     "📈 Giá mua", 
     "📊 Giá bán",
     "📉 Chênh lệch",
-    "📋 Dữ liệu chi tiết"
+    "📋 Dữ liệu chi tiết",
+    "🤖 Dự báo (ML)" 
 ])
 
-# --- Tab 1: Dự báo (ML) ---
+# --- Tab: Giá Mua ---
+with tab_buy:
+    fig_buy = px.line(df_final, x="Ngày", y="Mua vào", title=f"Diễn biến giá MUA - {source} ({gold_type})",
+                      markers=True, color_discrete_sequence=[theme_color])
+    st.plotly_chart(fig_buy, use_container_width=True)
+
+# --- Tab: Giá Bán ---
+with tab_sell:
+    fig_sell = px.line(df_final, x="Ngày", y="Bán ra", title=f"Diễn biến giá BÁN - {source} ({gold_type})",
+                       markers=True, color_discrete_sequence=[theme_color])
+    st.plotly_chart(fig_sell, use_container_width=True)
+
+# --- Tab: Chênh lệch ---
+with tab_spread:
+    fig_spread = px.bar(df_final, x="Ngày", y="Chênh lệch", title=f"Chênh lệch Mua/Bán - {source} ({gold_type})",
+                         hover_data=['Mua vào', 'Bán ra'], color_discrete_sequence=[theme_color])
+    st.plotly_chart(fig_spread, use_container_width=True)
+
+# --- Tab: Dữ liệu chi tiết (ĐÃ SỬA LỖI KEYERROR) ---
+with tab_data:
+    st.header(f"Dữ liệu chi tiết (đã lọc cho {source})")
+    
+    # 1. Bắt đầu với các cột chúng ta BIẾT là luôn tồn tại
+    columns_to_show = ["Thương hiệu", "Ngày", "Loại vàng", "Mua vào", "Bán ra", "Chênh lệch"]
+    
+    if 'Thời gian cập nhật' in df_final.columns:
+        df_display = df_final.sort_values(by="Thời gian cập nhật", ascending=False).copy()
+        
+        # 2. Thêm cột 'Giờ VN' NẾU nó tồn tại
+        if 'Thời gian cập nhật (VN)' in df_display.columns:
+             df_display["Giờ VN"] = df_display["Thời gian cập nhật (VN)"].dt.strftime('%d-%m-%Y %H:%M:%S')
+             columns_to_show.append("Giờ VN") # Thêm vào danh sách
+        
+        # 3. Thêm cột 'source' NẾU nó tồn tại
+        if 'source' in df_display.columns:
+            columns_to_show.append("source") # Thêm vào danh sách
+            
+        st.dataframe(df_display[columns_to_show], use_container_width=True)
+
+    else:
+        # 4. SỬA LỖI CHÍNH TẢ: "Thorough" -> "Thương hiệu"
+        df_display = df_final.sort_values(by="Ngày", ascending=False)
+        st.dataframe(df_display[columns_to_show], use_container_width=True) # Dùng lại danh sách an toàn
+
+# --- Tab: Dự báo (ML) (Bây giờ nằm ở cuối) ---
 with tab_ml:
     st.header(f"Trung tâm Đánh giá & Dự báo Mô hình")
     st.info(f"Đang phân tích dữ liệu 'Bán ra' cho: {gold_type}")
-
+    
     df_ml = create_features(df_final)
-
+    
     if len(df_ml) < 20: 
         st.warning("Cần ít nhất 20 ngày dữ liệu (sau khi lọc) để chạy so sánh mô hình.")
     else:
         with st.spinner("Đang huấn luyện 3 mô hình... (Có thể mất 1 phút)"):
             scores, best_name, best_model, test_fig = run_model_evaluation(df_ml, theme_color)
-
+            
             st.subheader("1. Kết quả Đánh giá Mô hình (trên tập Test)")
             st.write("Chỉ số: MAE (Sai số Tuyệt đối Trung bình) - Càng thấp càng tốt.")
-
+            
             df_scores = pd.DataFrame.from_dict(scores, orient='index', columns=['MAE (VND)'])
             df_scores = df_scores.sort_values('MAE (VND)')
             df_scores['MAE (VND)'] = df_scores['MAE (VND)'].map('{:,.0f}'.format)
             st.dataframe(df_scores)
-
+            
             st.success(f"Mô hình tối ưu được chọn: **{best_name}** (MAE: {scores[best_name]:,.0f} VND)")
             st.plotly_chart(test_fig, use_container_width=True)
 
             st.subheader("2. Dự báo 30 ngày tới (dùng mô hình tốt nhất)")
-
+            
             FEATURES = ['ngày_trong_tuần', 'tháng', 'ngày_trong_năm', 'giá_trễ_1_ngày', 'giá_trễ_7_ngày', 'tb_trượt_7_ngày']
             X_all, y_all = df_ml[FEATURES], df_ml['Bán ra']
-
+            
             if best_name == "XGBoost":
                  best_model.fit(X_all, y_all, eval_set=[(X_all, y_all)], verbose=False)
             else:
                  best_model.fit(X_all, y_all)
-
+            
             df_forecast = run_future_forecast(best_model, df_ml, FEATURES)
 
             fig_forecast = px.line(df_final, x="Ngày", y="Bán ra", title=f"Giá BÁN (Lịch sử & Dự báo)", markers=True)
@@ -310,48 +350,4 @@ with tab_ml:
             fig_forecast.add_scatter(x=df_forecast['Ngày'], y=df_forecast['Dự báo'], mode='lines', name=f'Dự báo ({best_name})', line=dict(color='#FF5733', dash='dot'))
             st.plotly_chart(fig_forecast, use_container_width=True)
 
-# --- Tab 2: So sánh Thương hiệu ---
-with tab_compare:
-    st.header("So sánh giá bán giữa các thương hiệu")
-    st.info(f"Đang so sánh cho loại vàng: **{gold_type}**")
-    df_compare = df_all[(df_all["Loại vàng"] == gold_type) & (df_all["Ngày"] >= pd.to_datetime(start_date)) & (df_all["Ngày"] <= pd.to_datetime(end_date))].copy()
-
-    if 'Thời gian cập nhật' in df_compare.columns:
-        df_compare = df_compare.sort_values("Thời gian cập nhật").drop_duplicates(["Ngày", "Thương hiệu"], keep="last")
-    else:
-        df_compare = df_compare.sort_values("Ngày").drop_duplicates(["Ngày", "Thương hiệu"], keep="last")
-
-    if df_compare.empty or df_compare['Thương hiệu'].nunique() <= 1:
-        st.warning(f"Không có đủ dữ liệu (từ nhiều thương hiệu) để so sánh cho loại vàng '{gold_type}'.")
-    else:
-        df_pivot = df_compare.pivot_table(index='Ngày', columns='Thương hiệu', values='Bán ra').fillna(method='ffill') 
-        fig_compare = px.line(df_pivot, title=f"So sánh giá bán: {gold_type}", markers=True)
-        st.plotly_chart(fig_compare, use_container_width=True)
-
-# --- Tab 3 & 4 (Giá Mua, Bán) ---
-with tab_buy:
-    fig_buy = px.line(df_final, x="Ngày", y="Mua vào", title=f"Diễn biến giá MUA - {source} ({gold_type})",
-                      markers=True, color_discrete_sequence=[theme_color])
-    st.plotly_chart(fig_buy, use_container_width=True)
-with tab_sell:
-    fig_sell = px.line(df_final, x="Ngày", y="Bán ra", title=f"Diễn biến giá BÁN - {source} ({gold_type})",
-                       markers=True, color_discrete_sequence=[theme_color])
-    st.plotly_chart(fig_sell, use_container_width=True)
-
-# --- Tab 5 (Chênh lệch) ---
-with tab_spread:
-    fig_spread = px.bar(df_final, x="Ngày", y="Chênh lệch", title=f"Chênh lệch Mua/Bán - {source} ({gold_type})",
-                         hover_data=['Mua vào', 'Bán ra'], color_discrete_sequence=[theme_color])
-    st.plotly_chart(fig_spread, use_container_width=True)
-
-# --- Tab 6 (Dữ liệu) ---
-with tab_data:
-    st.header(f"Dữ liệu chi tiết (đã lọc cho {source})")
-
-    if 'Thời gian cập nhật' in df_final.columns:
-        df_display = df_final.sort_values(by="Thời gian cập nhật", ascending=False)
-        df_display["Giờ VN"] = df_display["Thời gian cập nhật (VN)"].dt.strftime('%d-%m-%Y %H:%M:%S')
-        st.dataframe(df_display[["Thương hiệu", "Ngày", "Loại vàng", "Mua vào", "Bán ra", "Chênh lệch", "Giờ VN", "source"]], use_container_width=True)
-    else:
-        df_display = df_final.sort_values(by="Ngày", ascending=False)
-        st.dataframe(df_display[["Thorough", "Ngày", "Loại vàng", "Mua vào", "Bán ra", "Chênh lệch"]], use_container_width=True)
+# --- KHỐI CODE BỊ XÓA (TAB 'SO SÁNH THƯƠNG HIỆU' ĐÃ BỊ XÓA) ---
