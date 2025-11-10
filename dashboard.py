@@ -1,4 +1,4 @@
-# dashboard.py 
+#dashboard
 import streamlit as st
 import pandas as pd
 from pymongo import MongoClient
@@ -42,7 +42,7 @@ def connect_and_load_data():
             .replace("", "0").astype(float)
         )
     
-    df["Ngày"] = pd.to_datetime(df["Ngày"], format="%Y-m-%d", errors="coerce")
+    df["Ngày"] = pd.to_datetime(df["Ngày"], format="%Y-%m-%d", errors="coerce")
     
     if 'Thời gian cập nhật' in df.columns:
         vietnam_tz = ZoneInfo("Asia/Ho_Chi_Minh")
@@ -53,8 +53,7 @@ def connect_and_load_data():
     return df
 
 # ==========================
-# 🤖 CÁC HÀM MACHINE LEARNING
-# (Giữ nguyên)
+# 🤖 CÁC HÀM MACHINE LEARNING (LOGIC V5)
 # ==========================
 def create_features(df):
     df_feat = df[['Ngày', 'Bán ra']].copy()
@@ -62,6 +61,7 @@ def create_features(df):
         df_feat = df.sort_values("Thời gian cập nhật").drop_duplicates("Ngày", keep="last").copy()
     else:
         df_feat = df.sort_values("Ngày").drop_duplicates("Ngày", keep="last").copy()
+
     df_feat['ngày_trong_tuần'] = df_feat['Ngày'].dt.dayofweek
     df_feat['tháng'] = df_feat['Ngày'].dt.month
     df_feat['ngày_trong_năm'] = df_feat['Ngày'].dt.dayofyear
@@ -79,6 +79,7 @@ def run_model_evaluation(df_ml, theme_color):
     test_df = df_ml.iloc[split_index:]
     X_train, y_train = train_df[FEATURES], train_df[TARGET]
     X_test, y_test = test_df[FEATURES], test_df[TARGET]
+
     models = {
         "Linear Regression": LinearRegression(),
         "Random Forest": RandomForestRegressor(n_estimators=100, random_state=42, n_jobs=-1),
@@ -86,6 +87,7 @@ def run_model_evaluation(df_ml, theme_color):
     }
     scores = {}
     test_predictions = {}
+
     for name, model in models.items():
         if name == "XGBoost":
             model.fit(X_train, y_train, eval_set=[(X_test, y_test)], verbose=False)
@@ -95,20 +97,25 @@ def run_model_evaluation(df_ml, theme_color):
         mae = mean_absolute_error(y_test, preds)
         scores[name] = mae
         test_predictions[name] = preds
+
     best_model_name = min(scores, key=scores.get)
     best_model_instance = models[best_model_name]
+    
     df_plot = pd.DataFrame({'Ngày': test_df['Ngày'], 'Giá trị thực tế': y_test, 'Giá trị dự báo (Tốt nhất)': test_predictions[best_model_name]})
+    
     fig = px.line(df_plot, x='Ngày', y=['Giá trị thực tế', 'Giá trị dự báo (Tốt nhất)'], 
                   title=f'So sánh trên tập Test (Mô hình tốt nhất: {best_model_name})',
                   markers=True, color_discrete_map={
                       'Giá trị thực tế': theme_color,
                       'Giá trị dự báo (Tốt nhất)': '#FF5733'
                   })
+    
     return scores, best_model_name, best_model_instance, fig
 
 def run_future_forecast(model, df_ml, features_list):
     recent_data = df_ml.iloc[-30:].copy()
     future_predictions = []
+    
     for i in range(30):
         last_row = recent_data.iloc[-1]
         next_date = last_row['Ngày'] + timedelta(days=1)
@@ -125,6 +132,7 @@ def run_future_forecast(model, df_ml, features_list):
         future_predictions.append({'Ngày': next_date, 'Dự báo': next_pred})
         new_row = {'Ngày': next_date, 'Bán ra': next_pred, **next_day_features}
         recent_data = pd.concat([recent_data, pd.DataFrame([new_row])], ignore_index=True)
+
     df_forecast = pd.DataFrame(future_predictions)
     return df_forecast
 
@@ -134,46 +142,32 @@ def run_future_forecast(model, df_ml, features_list):
 st.set_page_config(page_title="Gold Price Dashboard", layout="wide")
 df_all = connect_and_load_data()
 
+if df_all.empty:
+    st.warning("⚠️ Lỗi (Cache): Vui lòng Clear Cache.")
+    st.stop()
+
 # ==========================
-# 🧩 BỘ LỌC SIDEBAR (SỬA Ở ĐÂY)
+# 🧩 BỘ LỌC SIDEBAR
 # ==========================
 st.sidebar.header("🎛️ Bộ lọc dữ liệu")
-available_brands = list(df_all["Thương hiệu"].unique()) 
-
-default_index = 0 
-if "DOJI" in available_brands:
-    default_index = available_brands.index("DOJI")
-
-source = st.sidebar.selectbox(
-    "🪙 Chọn thương hiệu vàng:", 
-    available_brands, 
-    index=default_index 
-)
-
-# --- THÊM CẦU DAO (V5.5) ---
-# Dừng lại nếu cache rỗng làm cho 'source' bị None
-if not source:
-    st.warning("Đang tải dữ liệu, vui lòng chờ... (Nếu lỗi, hãy 'Clear cache')")
-    st.stop()
-# --- Hết sửa đổi ---
+available_brands = df_all["Thương hiệu"].unique()
+source = st.sidebar.selectbox("🪙 Chọn thương hiệu vàng:", available_brands)
 
 # ==========================
 # 🎨 THEME & LOGO
-# (Giữ nguyên)
 # ==========================
 theme_data = {
     "PNJ": {"color": "#001F3F", "bg_light": "#E6EEF8", "logo": "logopnj.png"},
     "DOJI": {"color": "#B22222", "bg_light": "#FCECEC", "logo": "logodoji.png"},
     "SJC": {"color": "#CCAF66", "bg_light": "#FFF9E6", "logo": "logosjc.png"}
 }
-theme = theme_data.get(source.upper(), {"color": "#2E86C1", "bg_light": "#F4F6F8", "logo": ""}) # <-- Lỗi xảy ra ở đây
+theme = theme_data.get(source.upper(), {"color": "#2E86C1", "bg_light": "#F4F6F8", "logo": ""})
 theme_color = theme["color"]
 bg_light = theme["bg_light"]
 logo_path = theme["logo"]
 
 # ==========================
 # 🖌️ CSS THEME
-# (Giữ nguyên)
 # ==========================
 st.markdown(f"""
     <style>
@@ -185,13 +179,12 @@ st.markdown(f"""
     div[data-testid="stMetricValue"] {{ color: {theme_color} !important; font-weight: 700; font-size: 26px; }}
     .stTabs [data-baseweb="tab"] {{ background-color: {theme_color}15; border-radius: 8px; margin: 2px; color: #333; font-weight: 600; }}
     .stTabs [data-baseweb="tab"]:hover {{ background-color: {theme_color}30; }}
-    .stTabs [data-basSweb="tab"][aria-selected="true"] {{ background-color: {theme_color}; color: white !important; }}
+    .stTabs [data-baseweb="tab"][aria-selected="true"] {{ background-color: {theme_color}; color: white !important; }}
     </style>
 """, unsafe_allow_html=True)
 
 # ==========================
 # 🖼️ LOGO + TIÊU ĐỀ
-# (Giữ nguyên)
 # ==========================
 def load_logo_base64(path):
     if not os.path.isfile(path):
@@ -216,7 +209,6 @@ else:
 
 # ==========================
 # 📂 LỌC DỮ LIỆU
-# (Giữ nguyên)
 # ==========================
 df_brand_filtered = df_all[df_all["Thương hiệu"] == source].copy()
 available_types = sorted(df_brand_filtered["Loại vàng"].unique())
@@ -247,7 +239,6 @@ if df_final.empty:
 
 # ==========================
 # 💎 GIÁ MỚI NHẤT
-# (Giữ nguyên)
 # ==========================
 if 'Thời gian cập nhật' in df_final.columns:
     latest = df_final.sort_values(by="Thời gian cập nhật").iloc[-1]
@@ -261,11 +252,11 @@ with col2: st.metric("Giá mua", f"{latest['Mua vào']:,.0f} VND")
 with col3: st.metric("Giá bán", f"{latest['Bán ra']:,.0f} VND")
 
 # ==========================
-# 📊 TABS
-# (Giữ nguyên)
+# 📊 TABS (V5.2 - ĐÃ SẮP XẾP LẠI)
 # ==========================
 df_final["Chênh lệch"] = df_final["Bán ra"] - df_final["Mua vào"]
 
+# SỬA: Xóa 'So sánh' và chuyển 'ML' ra cuối
 tab_buy, tab_sell, tab_spread, tab_data, tab_ml = st.tabs([
     "📈 Giá mua", 
     "📊 Giá bán",
@@ -274,62 +265,89 @@ tab_buy, tab_sell, tab_spread, tab_data, tab_ml = st.tabs([
     "🤖 Dự báo (ML)" 
 ])
 
+# --- Tab: Giá Mua ---
 with tab_buy:
     fig_buy = px.line(df_final, x="Ngày", y="Mua vào", title=f"Diễn biến giá MUA - {source} ({gold_type})",
                       markers=True, color_discrete_sequence=[theme_color])
     st.plotly_chart(fig_buy, use_container_width=True)
 
+# --- Tab: Giá Bán ---
 with tab_sell:
     fig_sell = px.line(df_final, x="Ngày", y="Bán ra", title=f"Diễn biến giá BÁN - {source} ({gold_type})",
                        markers=True, color_discrete_sequence=[theme_color])
     st.plotly_chart(fig_sell, use_container_width=True)
 
+# --- Tab: Chênh lệch ---
 with tab_spread:
     fig_spread = px.bar(df_final, x="Ngày", y="Chênh lệch", title=f"Chênh lệch Mua/Bán - {source} ({gold_type})",
                          hover_data=['Mua vào', 'Bán ra'], color_discrete_sequence=[theme_color])
     st.plotly_chart(fig_spread, use_container_width=True)
 
+# --- Tab: Dữ liệu chi tiết (ĐÃ SỬA LỖI KEYERROR) ---
 with tab_data:
     st.header(f"Dữ liệu chi tiết (đã lọc cho {source})")
+    
+    # 1. Bắt đầu với các cột chúng ta BIẾT là luôn tồn tại
     columns_to_show = ["Thương hiệu", "Ngày", "Loại vàng", "Mua vào", "Bán ra", "Chênh lệch"]
+    
     if 'Thời gian cập nhật' in df_final.columns:
         df_display = df_final.sort_values(by="Thời gian cập nhật", ascending=False).copy()
+        
+        # 2. Thêm cột 'Giờ VN' NẾU nó tồn tại
         if 'Thời gian cập nhật (VN)' in df_display.columns:
              df_display["Giờ VN"] = df_display["Thời gian cập nhật (VN)"].dt.strftime('%d-%m-%Y %H:%M:%S')
-             columns_to_show.append("Giờ VN") 
+             columns_to_show.append("Giờ VN") # Thêm vào danh sách
+        
+        # 3. Thêm cột 'source' NẾU nó tồn tại
         if 'source' in df_display.columns:
-            columns_to_show.append("source") 
+            columns_to_show.append("source") # Thêm vào danh sách
+            
         st.dataframe(df_display[columns_to_show], use_container_width=True)
-    else:
-        df_display = df_final.sort_values(by="Ngày", ascending=False)
-        st.dataframe(df_display[columns_to_show], use_container_width=True) 
 
+    else:
+        # 4. SỬA LỖI CHÍNH TẢ: "Thorough" -> "Thương hiệu"
+        df_display = df_final.sort_values(by="Ngày", ascending=False)
+        st.dataframe(df_display[columns_to_show], use_container_width=True) # Dùng lại danh sách an toàn
+
+# --- Tab: Dự báo (ML) (Bây giờ nằm ở cuối) ---
 with tab_ml:
     st.header(f"Trung tâm Đánh giá & Dự báo Mô hình")
     st.info(f"Đang phân tích dữ liệu 'Bán ra' cho: {gold_type}")
+    
     df_ml = create_features(df_final)
+    
     if len(df_ml) < 20: 
         st.warning("Cần ít nhất 20 ngày dữ liệu (sau khi lọc) để chạy so sánh mô hình.")
     else:
         with st.spinner("Đang huấn luyện 3 mô hình... (Có thể mất 1 phút)"):
             scores, best_name, best_model, test_fig = run_model_evaluation(df_ml, theme_color)
+            
             st.subheader("1. Kết quả Đánh giá Mô hình (trên tập Test)")
             st.write("Chỉ số: MAE (Sai số Tuyệt đối Trung bình) - Càng thấp càng tốt.")
+            
             df_scores = pd.DataFrame.from_dict(scores, orient='index', columns=['MAE (VND)'])
             df_scores = df_scores.sort_values('MAE (VND)')
             df_scores['MAE (VND)'] = df_scores['MAE (VND)'].map('{:,.0f}'.format)
             st.dataframe(df_scores)
+            
             st.success(f"Mô hình tối ưu được chọn: **{best_name}** (MAE: {scores[best_name]:,.0f} VND)")
             st.plotly_chart(test_fig, use_container_width=True)
+
             st.subheader("2. Dự báo 30 ngày tới (dùng mô hình tốt nhất)")
+            
             FEATURES = ['ngày_trong_tuần', 'tháng', 'ngày_trong_năm', 'giá_trễ_1_ngày', 'giá_trễ_7_ngày', 'tb_trượt_7_ngày']
             X_all, y_all = df_ml[FEATURES], df_ml['Bán ra']
+            
             if best_name == "XGBoost":
                  best_model.fit(X_all, y_all, eval_set=[(X_all, y_all)], verbose=False)
             else:
                  best_model.fit(X_all, y_all)
+            
             df_forecast = run_future_forecast(best_model, df_ml, FEATURES)
+
             fig_forecast = px.line(df_final, x="Ngày", y="Bán ra", title=f"Giá BÁN (Lịch sử & Dự báo)", markers=True)
             fig_forecast.update_traces(line=dict(color=theme_color), name='Giá thực tế')
             fig_forecast.add_scatter(x=df_forecast['Ngày'], y=df_forecast['Dự báo'], mode='lines', name=f'Dự báo ({best_name})', line=dict(color='#FF5733', dash='dot'))
             st.plotly_chart(fig_forecast, use_container_width=True)
+
+# --- KHỐI CODE BỊ XÓA (TAB 'SO SÁNH THƯƠNG HIỆU' ĐÃ BỊ XÓA) ---
