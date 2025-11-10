@@ -186,13 +186,6 @@ if df_all.empty:
     st.stop()
 
 # ==========================
-# 🧩 BỘ LỌC SIDEBAR
-# ==========================
-st.sidebar.header("🎛️ Bộ lọc dữ liệu")
-available_brands = df_all["Thương hiệu"].unique()
-source = st.sidebar.selectbox("🪙 Chọn thương hiệu vàng:", available_brands)
-
-# ==========================
 # 🎨 THEME & LOGO
 # ==========================
 theme_data = {
@@ -396,3 +389,4 @@ with tab_ml:
             st.plotly_chart(fig_forecast, use_container_width=True)
 
 # --- KHỐI CODE BỊ XÓA (TAB 'SO SÁNH THƯƠNG HIỆU' ĐÃ BỊ XÓA) ---
+
