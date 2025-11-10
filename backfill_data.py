@@ -10,19 +10,9 @@ from pymongo import MongoClient
 # 🔧 KẾT NỐI MONGODB
 # =============================================
 def connect_mongo():
-    MONGO_URI = os.environ.get("MONGODB_ATLAS_URI")
-    # ... (các dòng if not MONGO_URI) ...
-    client = MongoClient(MONGO_URI)
+    client = MongoClient("mongodb+srv://gold_user:nhom5vuive@cluster0.a5bcwew.mongodb.net/gold_pipeline?appName=Cluster0")
     db = client["gold_pipeline"]
     collection = db["gold_prices"]
-
-    # MỚI: Thêm luật "Chống trùng lặp"
-    print("Đang tạo Unique Index (để chống trùng lặp)...")
-    collection.create_index(
-        [("Thương hiệu", ASCENDING), ("Loại vàng", ASCENDING), ("Ngày", ASCENDING)],
-        unique=True
-    )
-
     return collection
 
 
@@ -211,4 +201,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
