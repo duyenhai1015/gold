@@ -147,20 +147,12 @@ if df_all.empty:
     st.stop()
 
 # ==========================
-# 🧩 BỘ LỌC SIDEBAR (SỬA Ở ĐÂY)
+# 🧩 BỘ LỌC SIDEBAR
 # ==========================
 st.sidebar.header("🎛️ Bộ lọc dữ liệu")
-available_brands = list(df_all["Thương hiệu"].unique()) # <-- Chuyển sang list
+available_brands = df_all["Thương hiệu"].unique()
+source = st.sidebar.selectbox("🪙 Chọn thương hiệu vàng:", available_brands)
 
-# --- SỬA ĐỔI: Đặt DOJI làm mặc định ---
-default_index = 0 
-if "DOJI" in available_brands:
-    default_index = available_brands.index("DOJI")
-source = st.sidebar.selectbox(
-    "🪙 Chọn thương hiệu vàng:", 
-    available_brands,
-    index=default_index 
-)
 # ==========================
 # 🎨 THEME & LOGO
 # ==========================
@@ -291,7 +283,7 @@ with tab_spread:
                          hover_data=['Mua vào', 'Bán ra'], color_discrete_sequence=[theme_color])
     st.plotly_chart(fig_spread, use_container_width=True)
 
-# --- Tab: Dữ liệu chi tiết (ĐÃ SỬA LỖI KEYERROR) ---
+# --- Tab: Dữ liệu chi tiết  ---
 with tab_data:
     st.header(f"Dữ liệu chi tiết (đã lọc cho {source})")
     
@@ -358,5 +350,4 @@ with tab_ml:
             fig_forecast.add_scatter(x=df_forecast['Ngày'], y=df_forecast['Dự báo'], mode='lines', name=f'Dự báo ({best_name})', line=dict(color='#FF5733', dash='dot'))
             st.plotly_chart(fig_forecast, use_container_width=True)
 
-# --- KHỐI CODE BỊ XÓA (TAB 'SO SÁNH THƯƠNG HIỆU' ĐÃ BỊ XÓA) ---
-
+# --- (TAB 'SO SÁNH THƯƠNG HIỆU' ) ---
