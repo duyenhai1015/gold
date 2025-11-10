@@ -8,6 +8,10 @@ from zoneinfo import ZoneInfo
 import os
 import base64
 import numpy as np
+from sklearn.linear_model import LinearRegression
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.metrics import mean_absolute_error
+from xgboost import XGBRegressor
 
 # Import các thư viện ML
 from sklearn.linear_model import LinearRegression
@@ -56,78 +60,123 @@ def connect_and_load_data():
 # 🤖 CÁC HÀM MACHINE LEARNING
 # ==========================
 def create_features(df):
+    """Tạo đặc trưng từ cột Ngày cho mô hình ML."""
     df_feat = df[['Ngày', 'Bán ra']].copy()
-    # SỬA: Dùng logic V5 (ưu tiên 'Thời gian cập nhật')
-    if 'Thời gian cập nhật' in df.columns:
-        df_feat = df.sort_values("Thời gian cập nhật").drop_duplicates("Ngày", keep="last").copy()
-    else:
-        df_feat = df.sort_values("Ngày").drop_duplicates("Ngày", keep="last").copy()
+    # Chỉ lấy giá trị cuối cùng mỗi ngày
+    df_feat = df_feat.sort_values("Ngày").drop_duplicates("Ngày", keep="last")
     
     df_feat['ngày_trong_tuần'] = df_feat['Ngày'].dt.dayofweek
     df_feat['tháng'] = df_feat['Ngày'].dt.month
     df_feat['ngày_trong_năm'] = df_feat['Ngày'].dt.dayofyear
+    
+    # Tạo đặc trưng trễ (Lag features)
     df_feat['giá_trễ_1_ngày'] = df_feat['Bán ra'].shift(1)
     df_feat['giá_trễ_7_ngày'] = df_feat['Bán ra'].shift(7)
+    
+    # Tạo đặc trưng trượt (Rolling features)
     df_feat['tb_trượt_7_ngày'] = df_feat['Bán ra'].rolling(window=7).mean().shift(1)
+    
+    # Xóa các dòng NaN (do shift/rolling)
     df_feat = df_feat.dropna()
+    
     return df_feat
 
-def run_model_evaluation(df_ml, theme_color): # SỬA: Thêm theme_color
+def run_model_evaluation(df_ml):
+    """Chạy train/test split và đánh giá 3 mô hình."""
+    
+    # 1. Định nghĩa đặc trưng (X) và mục tiêu (y)
     FEATURES = ['ngày_trong_tuần', 'tháng', 'ngày_trong_năm', 'giá_trễ_1_ngày', 'giá_trễ_7_ngày', 'tb_trượt_7_ngày']
     TARGET = 'Bán ra'
+
+    # 2. Train/Test Split (80% train, 20% test)
     split_index = int(len(df_ml) * 0.8)
     train_df = df_ml.iloc[:split_index]
     test_df = df_ml.iloc[split_index:]
+
     X_train, y_train = train_df[FEATURES], train_df[TARGET]
     X_test, y_test = test_df[FEATURES], test_df[TARGET]
+
+    # 3. Định nghĩa các mô hình
     models = {
         "Linear Regression": LinearRegression(),
         "Random Forest": RandomForestRegressor(n_estimators=100, random_state=42, n_jobs=-1),
-        "XGBrst": XGBRegressor(n_estimators=100, random_state=42, n_jobs=-1, early_stopping_rounds=10)
+        "XGBoost": XGBRegressor(n_estimators=100, random_state=42, n_jobs=-1, early_stopping_rounds=10)
     }
+
     scores = {}
     test_predictions = {}
+
+    # 4. Huấn luyện và Đánh giá
     for name, model in models.items():
+        st.write(f"Đang huấn luyện {name}...")
+        
+        # XGBoost cần eval_set để early stopping
         if name == "XGBoost":
             model.fit(X_train, y_train, eval_set=[(X_test, y_test)], verbose=False)
         else:
             model.fit(X_train, y_train)
+            
         preds = model.predict(X_test)
         mae = mean_absolute_error(y_test, preds)
         scores[name] = mae
         test_predictions[name] = preds
+
+    # 5. Tìm mô hình tốt nhất
     best_model_name = min(scores, key=scores.get)
     best_model_instance = models[best_model_name]
-    df_plot = pd.DataFrame({'Ngày': test_df['Ngày'], 'Giá trị thực tế': y_test, 'Giá trị dự báo (Tốt nhất)': test_predictions[best_model_name]})
     
-    # SỬA: Dùng theme_color
-    fig = px.line(df_plot, x='Ngày', y=['Giá trị thực tế', 'Giá trị dự báo (Tốt nhất)'],
+    # 6. Trực quan hóa kết quả Test
+    df_plot = pd.DataFrame({
+        'Ngày': test_df['Ngày'],
+        'Giá trị thực tế': y_test,
+        'Giá trị dự báo (Tốt nhất)': test_predictions[best_model_name]
+    })
+    fig = px.line(df_plot, x='Ngày', y=['Giá trị thực tế', 'Giá trị dự báo (Tốt nhất)'], 
                   title=f'So sánh trên tập Test (Mô hình tốt nhất: {best_model_name})',
-                  markers=True, color_discrete_map={
-                      'Giá trị thực tế': theme_color,
-                      'Giá trị dự báo (Tốt nhất)': '#FF5733'
-                  })
+                  markers=True)
+    
     return scores, best_model_name, best_model_instance, fig
 
 def run_future_forecast(model, df_ml, features_list):
+    """Dùng model tốt nhất để dự báo 30 ngày tương lai."""
+    
+    # 1. Lấy 30 ngày dữ liệu cuối cùng để làm mồi
+    # (Cần ít nhất 7 ngày, nhưng 30 ngày ổn định hơn)
     recent_data = df_ml.iloc[-30:].copy()
+    
     future_predictions = []
-    for i in range(30):
+    
+    for i in range(30): # Dự báo 30 ngày
+        # 2. Lấy dòng cuối cùng (dữ liệu mới nhất)
         last_row = recent_data.iloc[-1]
+        
+        # 3. Tạo ngày tiếp theo
         next_date = last_row['Ngày'] + timedelta(days=1)
+        
+        # 4. Tạo đặc trưng cho ngày tiếp theo
         next_day_features = {
             'ngày_trong_tuần': next_date.dayofweek,
             'tháng': next_date.month,
             'ngày_trong_năm': next_date.dayofyear,
-            'giá_trễ_1_ngày': last_row['Bán ra'],
-            'giá_trễ_7_ngày': recent_data.iloc[-6]['Bán ra'],
-            'tb_trượt_7_ngày': recent_data.iloc[-7:]['Bán ra'].mean()
+            'giá_trễ_1_ngày': last_row['Bán ra'], # Giá hôm nay là lag1 của mai
+            'giá_trễ_7_ngày': recent_data.iloc[-6]['Bán ra'], # Lấy lag 7
+            'tb_trượt_7_ngày': recent_data.iloc[-7:]['Bán ra'].mean() # Lấy TB 7 ngày
         }
+        
+        # Biến đổi thành DataFrame 1 dòng
         X_future = pd.DataFrame([next_day_features])[features_list]
+        
+        # 5. Dự báo
         next_pred = model.predict(X_future)[0]
+        
+        # 6. Thêm vào danh sách dự báo
         future_predictions.append({'Ngày': next_date, 'Dự báo': next_pred})
+        
+        # 7. Cập nhật 'recent_data' (quan trọng!)
+        # Thêm dòng dự báo mới vào để dùng cho vòng lặp tiếp theo
         new_row = {'Ngày': next_date, 'Bán ra': next_pred, **next_day_features}
         recent_data = pd.concat([recent_data, pd.DataFrame([new_row])], ignore_index=True)
+
     df_forecast = pd.DataFrame(future_predictions)
     return df_forecast
 
@@ -316,14 +365,15 @@ with tab_ml:
     st.header(f"Trung tâm Đánh giá & Dự báo Mô hình")
     st.info(f"Đang phân tích dữ liệu 'Bán ra' cho: {gold_type}")
     
+    # 1. Tạo đặc trưng
     df_ml = create_features(df_final)
     
-    if len(df_ml) < 20:
+    if len(df_ml) < 20: # Cần đủ dữ liệu
         st.warning("Cần ít nhất 20 ngày dữ liệu (sau khi lọc) để chạy so sánh mô hình.")
     else:
         with st.spinner("Đang huấn luyện 3 mô hình... (Có thể mất 1 phút)"):
-            # SỬA: Phải truyền theme_color vào
-            scores, best_name, best_model, test_fig = run_model_evaluation(df_ml, theme_color) 
+            # 2. Chạy đánh giá
+            scores, best_name, best_model, test_fig = run_model_evaluation(df_ml)
             
             st.subheader("1. Kết quả Đánh giá Mô hình (trên tập Test)")
             st.write("Chỉ số: MAE (Sai số Tuyệt đối Trung bình) - Càng thấp càng tốt.")
@@ -336,20 +386,22 @@ with tab_ml:
             st.success(f"Mô hình tối ưu được chọn: **{best_name}** (MAE: {scores[best_name]:,.0f} VND)")
             st.plotly_chart(test_fig, use_container_width=True)
 
+            # 3. Chạy dự báo tương lai
             st.subheader("2. Dự báo 30 ngày tới (dùng mô hình tốt nhất)")
             
+            # Tái huấn luyện model tốt nhất trên TOÀN BỘ DỮ LIỆU
             FEATURES = ['ngày_trong_tuần', 'tháng', 'ngày_trong_năm', 'giá_trễ_1_ngày', 'giá_trễ_7_ngày', 'tb_trượt_7_ngày']
             X_all, y_all = df_ml[FEATURES], df_ml['Bán ra']
             
             if best_name == "XGBoost":
+                 # XGBoost cần fit lại với thông số tối ưu
                  best_model.fit(X_all, y_all, eval_set=[(X_all, y_all)], verbose=False)
             else:
                  best_model.fit(X_all, y_all)
             
             df_forecast = run_future_forecast(best_model, df_ml, FEATURES)
 
+            # 4. Vẽ biểu đồ dự báo
             fig_forecast = px.line(df_final, x="Ngày", y="Bán ra", title=f"Giá BÁN (Lịch sử & Dự báo)", markers=True)
-            # SỬA: Thêm màu cho biểu đồ
-            fig_forecast.update_traces(line=dict(color=theme_color), name='Giá thực tế')
-            fig_forecast.add_scatter(x=df_forecast['Ngày'], y=df_forecast['Dự báo'], mode='lines', name=f'Dự báo ({best_name})', line=dict(color='#FF5733', dash='dot'))
+            fig_forecast.add_scatter(x=df_forecast['Ngày'], y=df_forecast['Dự báo'], mode='lines', name=f'Dự báo ({best_name})')
             st.plotly_chart(fig_forecast, use_container_width=True)
