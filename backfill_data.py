@@ -1,31 +1,29 @@
-# backfill_data.py (V2 - An toàn & Chống trùng lặp)
+# backfill_data.py (V2.1 - Sửa lỗi datetime.UTC)
 
 import pandas as pd
 import random
 import json
 import requests
 from bs4 import BeautifulSoup
-from pymongo import MongoClient, ASCENDING # <-- Thêm ASCENDING
-from datetime import datetime, timedelta
-import os # <-- THÊM OS
+from pymongo import MongoClient, ASCENDING
+from datetime import datetime, timedelta, timezone # <-- SỬA 1
+import os 
 
 # =============================================
 # 🔧 KẾT NỐI MONGODB (AN TOÀN)
 # =============================================
 def connect_mongo():
-    # SỬA LỖI BẢO MẬT: Đọc từ biến môi trường
     MONGO_URI = os.environ.get("MONGODB_ATLAS_URI")
     
     if not MONGO_URI:
         print("❌ LỖI: Biến môi trường MONGODB_ATLAS_URI chưa được thiết lập.")
         print("👉 Gợi ý: Chạy lệnh 'export MONGODB_ATLAS_URI=...' trước khi chạy script này.")
-        exit() # Thoát nếu không có "chìa khóa"
+        exit(1) # Sửa: Dùng exit(1) để báo lỗi
         
     client = MongoClient(MONGO_URI)
     db = client["gold_pipeline"]
     collection = db["gold_prices"]
     
-    # MỚI: Thêm luật "Chống trùng lặp"
     print("🟡 Đang tạo Unique Index (để chống trùng lặp)...")
     try:
         collection.create_index(
@@ -39,9 +37,9 @@ def connect_mongo():
 
 # =============================================
 # 🟡 PNJ GOLD GENERATOR
-# (Giữ nguyên logic tạo dữ liệu của bạn)
 # =============================================
 def create_pnj_data(start_date, end_date):
+    # (Code logic PNJ giữ nguyên)
     gold_types = [
         "Vàng miếng SJC 999.9", "Nhẫn Trơn PNJ 999.9", "Vàng Kim Bảo 999.9",
         "Vàng Phúc Lộc Tài 999.9", "Vàng PNJ - Phượng Hoàng", "Vàng nữ trang 999.9",
@@ -90,7 +88,7 @@ def create_pnj_data(start_date, end_date):
                 "Loại vàng": gold_type,
                 "Mua vào": mua,
                 "Bán ra": ban,
-                "Thời gian cập nhật": datetime.now(datetime.UTC) # Đã sửa cảnh báo
+                "Thời gian cập nhật": datetime.now(timezone.utc) # <-- SỬA 2
             })
         current_date += timedelta(days=1)
     return data
@@ -99,6 +97,7 @@ def create_pnj_data(start_date, end_date):
 # 🟢 SJC GOLD GENERATOR
 # =============================================
 def create_sjc_data(start_date, end_date):
+    # (Code logic SJC giữ nguyên)
     sjc_types = [
         "Vàng SJC 1L, 10L, 1KG", "Vàng SJC 5 chỉ", "Vàng SJC 0.5 chỉ, 1 chỉ, 2 chỉ",
         "Vàng nhẫn SJC 99,99% 1 chỉ, 2 chỉ, 5 chỉ", "Nữ trang 99,99%", "Nữ trang 99%",
@@ -136,7 +135,7 @@ def create_sjc_data(start_date, end_date):
                 "Loại vàng": gold_type,
                 "Mua vào": mua,
                 "Bán ra": ban,
-                "Thời gian cập nhật": datetime.now(datetime.UTC) # Đã sửa cảnh báo
+                "Thời gian cập nhật": datetime.now(timezone.utc) # <-- SỬA 3
             })
         current_date += timedelta(days=1)
     return data
@@ -165,7 +164,6 @@ def get_real_doji_prices():
         return prices
     except Exception as e:
         print(f"❌ Lỗi khi cào DOJI, dùng dữ liệu giả: {e}")
-        # Trả về dữ liệu giả nếu cào lỗi
         return {
             "Vàng SJC": {"mua": 147500000, "bán": 149500000},
             "Vàng nhẫn DOJI": {"mua": 146200000, "bán": 148700000}
@@ -188,7 +186,7 @@ def create_doji_data(start_date, end_date):
                 "Loại vàng": name,
                 "Mua vào": mua,
                 "Bán ra": ban,
-                "Thời gian cập nhật": datetime.now(datetime.UTC) # Đã sửa cảnh báo
+                "Thời gian cập nhật": datetime.now(timezone.utc) # <-- SỬA 4
             })
         current_date += timedelta(days=1)
     return data
@@ -197,9 +195,9 @@ def create_doji_data(start_date, end_date):
 # 🚀 MAIN PROCESS
 # =============================================
 def main():
-    # Sửa: Lấy ngày hôm qua
+    # Sửa: Lấy 3 năm dữ liệu tính đến ngày hôm qua
     end_date = datetime.now() - timedelta(days=1)
-    start_date = datetime(end_date.year - 3, end_date.month, end_date.day) # 3 năm dữ liệu
+    start_date = datetime(end_date.year - 3, end_date.month, end_date.day) 
     
     collection = connect_mongo()
     print("🚀 Bắt đầu tạo & lưu dữ liệu vàng vào MongoDB...")
@@ -212,12 +210,10 @@ def main():
     if all_data:
         print(f"Tổng cộng có {len(all_data)} bản ghi, đang nạp (sẽ bỏ qua nếu trùng)...")
         try:
-            # SỬA LOGIC: ordered=False để nó bỏ qua lỗi trùng lặp và tiếp tục
             result = collection.insert_many(all_data, ordered=False)
             print(f"✅ Đã thêm {len(result.inserted_ids)} bản ghi MỚI vào 'gold_prices'")
         except Exception as e:
             if "writeErrors" in str(e):
-                # Đây là lỗi trùng lặp, hoàn toàn bình thường
                 print("ℹ️ Đã nạp xong. Bỏ qua các bản ghi bị trùng lặp (do đã tồn tại).")
             else:
                 print(f"❌ Lỗi nghiêm trọng khi nạp dữ liệu: {e}")
