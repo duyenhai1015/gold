@@ -17,8 +17,7 @@ def connect_mongo():
     
     if not MONGO_URI:
         print("❌ LỖI: Biến môi trường MONGODB_ATLAS_URI chưa được thiết lập.")
-        print("👉 Gợi ý: Chạy lệnh 'export MONGODB_ATLAS_URI=...' trước khi chạy script này.")
-        exit(1) # Sửa: Dùng exit(1) để báo lỗi
+        exit(1) # Báo lỗi cho GitHub Actions
         
     client = MongoClient(MONGO_URI)
     db = client["gold_pipeline"]
@@ -39,7 +38,6 @@ def connect_mongo():
 # 🟡 PNJ GOLD GENERATOR
 # =============================================
 def create_pnj_data(start_date, end_date):
-    # (Code logic PNJ giữ nguyên)
     gold_types = [
         "Vàng miếng SJC 999.9", "Nhẫn Trơn PNJ 999.9", "Vàng Kim Bảo 999.9",
         "Vàng Phúc Lộc Tài 999.9", "Vàng PNJ - Phượng Hoàng", "Vàng nữ trang 999.9",
@@ -97,7 +95,6 @@ def create_pnj_data(start_date, end_date):
 # 🟢 SJC GOLD GENERATOR
 # =============================================
 def create_sjc_data(start_date, end_date):
-    # (Code logic SJC giữ nguyên)
     sjc_types = [
         "Vàng SJC 1L, 10L, 1KG", "Vàng SJC 5 chỉ", "Vàng SJC 0.5 chỉ, 1 chỉ, 2 chỉ",
         "Vàng nhẫn SJC 99,99% 1 chỉ, 2 chỉ, 5 chỉ", "Nữ trang 99,99%", "Nữ trang 99%",
@@ -195,7 +192,7 @@ def create_doji_data(start_date, end_date):
 # 🚀 MAIN PROCESS
 # =============================================
 def main():
-    # Sửa: Lấy 3 năm dữ liệu tính đến ngày hôm qua
+    # Lấy 3 năm dữ liệu tính đến ngày hôm qua
     end_date = datetime.now() - timedelta(days=1)
     start_date = datetime(end_date.year - 3, end_date.month, end_date.day) 
     
