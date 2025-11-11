@@ -264,18 +264,15 @@ else:
     st.markdown(f"<div class='main-header'>🏆 GOLD PRICE DASHBOARD - VIETNAM 🇻🇳</div>", unsafe_allow_html=True)
 
 # ==========================
-# 1. LỌC THƯƠNG HIỆU VÀ LOẠI VÀNG
-df_brand_filtered = df_all[df_all["Thương hiệu"] == source].copy()
-available_types = sorted(df_brand_filtered["Loại vàng"].unique())
-gold_type = st.sidebar.selectbox("🎗️ Chọn loại vàng:", available_types)
-df_type_filtered = df_brand_filtered[df_brand_filtered["Loại vàng"] == gold_type].copy()
-
+# 2. CẦU DAO AN TOÀN (SỬA LỖI V5.9)
+# PHẢI KIỂM TRA RỖNG NGAY SAU KHI LỌC
 if df_type_filtered.empty:
-    st.warning(f"Không tìm thấy dữ liệu cho loại vàng: '{gold_type}'.")
-    st.stop()
+    # Nếu cache rỗng, df_all rỗng -> df_type_filtered rỗng
+    # Hoặc nếu người dùng chọn loại vàng không có dữ liệu
+    st.warning(f"Không tìm thấy dữ liệu cho loại vàng: '{gold_type}'. (Nếu đây là lỗi cache, vui lòng 'Clear cache')")
+    st.stop() # Dừng lại TRƯỚC KHI tính min/max
 
-# 2. TÍNH DỮ LIỆU MỚI NHẤT (TỪ DỮ LIỆU ĐÃ LỌC LOẠI VÀNG)
-# (PHẢI TÍNH TOÁN TRƯỚC KHI LỌC NGÀY)
+# 3. TÍNH DỮ LIỆU MỚI NHẤT (Bây giờ đã an toàn)
 if 'Thời gian cập nhật' in df_type_filtered.columns:
     latest = df_type_filtered.sort_values(by="Thời gian cập nhật").iloc[-1]
 else:
@@ -287,16 +284,16 @@ with col1: st.metric("Ngày", latest['Ngày'].strftime("%d-%m-%Y"))
 with col2: st.metric("Giá mua", f"{latest['Mua vào']:,.0f} VND")
 with col3: st.metric("Giá bán", f"{latest['Bán ra']:,.0f} VND")
 
-# 3. TẠO BỘ LỌC NGÀY (DỰA TRÊN DỮ LIỆU ĐÃ LỌC LOẠI VÀNG)
+# 4. TẠO BỘ LỌC NGÀY (Bây giờ đã an toàn)
 min_date = df_type_filtered["Ngày"].min().to_pydatetime()
-max_date = df_type_filtered["Ngày"].max().to_pydatetime() # Bây giờ max_date là 11/11
+max_date = df_type_filtered["Ngày"].max().to_pydatetime() 
 date_range = st.sidebar.date_input("🗓️ Chọn khoảng ngày:", (min_date, max_date), min_value=min_date, max_date=max_date)
 
 if len(date_range) != 2:
     st.sidebar.error("Bạn phải chọn khoảng ngày (bắt đầu và kết thúc).")
     st.stop()
 
-# 4. TẠO DF_FINAL (ĐỂ VẼ BIỂU ĐỒ)
+# 5. TẠO DF_FINAL (ĐỂ VẼ BIỂU ĐỒ)
 start_date, end_date = date_range
 df_final = df_type_filtered[
     (df_type_filtered["Ngày"] >= pd.to_datetime(start_date)) &
@@ -404,4 +401,5 @@ with tab_ml:
             fig_forecast = px.line(df_final, x="Ngày", y="Bán ra", title=f"Giá BÁN (Lịch sử & Dự báo)", markers=True)
             fig_forecast.add_scatter(x=df_forecast['Ngày'], y=df_forecast['Dự báo'], mode='lines', name=f'Dự báo ({best_name})')
             st.plotly_chart(fig_forecast, use_container_width=True)
+
 
