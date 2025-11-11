@@ -264,11 +264,18 @@ else:
     st.markdown(f"<div class='main-header'>🏆 GOLD PRICE DASHBOARD - VIETNAM 🇻🇳</div>", unsafe_allow_html=True)
 
 # ==========================
+# 1. LỌC THƯƠNG HIỆU VÀ LOẠI VÀNG
+df_brand_filtered = df_all[df_all["Thương hiệu"] == source].copy()
+available_types = sorted(df_brand_filtered["Loại vàng"].unique())
+gold_type = st.sidebar.selectbox("🎗️ Chọn loại vàng:", available_types)
+
+# === SỬA LỖI NAMEERROR BẰNG CÁCH ĐỊNH NGHĨA BIẾN Ở ĐÂY ===
+df_type_filtered = df_brand_filtered[df_brand_filtered["Loại vàng"] == gold_type].copy()
+# === HẾT SỬA LỖI ===
+
 # 2. CẦU DAO AN TOÀN (SỬA LỖI V5.9)
-# PHẢI KIỂM TRA RỖNG NGAY SAU KHI LỌC
+# Bây giờ dòng này (trước đây là 269) đã an toàn
 if df_type_filtered.empty:
-    # Nếu cache rỗng, df_all rỗng -> df_type_filtered rỗng
-    # Hoặc nếu người dùng chọn loại vàng không có dữ liệu
     st.warning(f"Không tìm thấy dữ liệu cho loại vàng: '{gold_type}'. (Nếu đây là lỗi cache, vui lòng 'Clear cache')")
     st.stop() # Dừng lại TRƯỚC KHI tính min/max
 
@@ -303,6 +310,7 @@ df_final = df_type_filtered[
 if df_final.empty:
     st.warning(f"Không tìm thấy dữ liệu cho '{gold_type}' trong khoảng ngày đã chọn.")
     st.stop()
+    
 # ==========================
 # 📊 TABS
 # ==========================
@@ -401,5 +409,6 @@ with tab_ml:
             fig_forecast = px.line(df_final, x="Ngày", y="Bán ra", title=f"Giá BÁN (Lịch sử & Dự báo)", markers=True)
             fig_forecast.add_scatter(x=df_forecast['Ngày'], y=df_forecast['Dự báo'], mode='lines', name=f'Dự báo ({best_name})')
             st.plotly_chart(fig_forecast, use_container_width=True)
+
 
 
