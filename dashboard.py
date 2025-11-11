@@ -264,42 +264,25 @@ else:
     st.markdown(f"<div class='main-header'>🏆 GOLD PRICE DASHBOARD - VIETNAM 🇻🇳</div>", unsafe_allow_html=True)
 
 # ==========================
-# 1. LỌC THƯƠNG HIỆU VÀ LOẠI VÀNG
+# 📂 LỌC DỮ LIỆU (Filter 2 & 3)
+# ==========================
 df_brand_filtered = df_all[df_all["Thương hiệu"] == source].copy()
 available_types = sorted(df_brand_filtered["Loại vàng"].unique())
 gold_type = st.sidebar.selectbox("🎗️ Chọn loại vàng:", available_types)
 df_type_filtered = df_brand_filtered[df_brand_filtered["Loại vàng"] == gold_type].copy()
 
-# 2. CẦU DAO AN TOÀN (SỬA LỖI V5.9)
-# PHẢI KIỂM TRA RỖNG NGAY SAU KHI LỌC
 if df_type_filtered.empty:
-    st.warning(f"Không tìm thấy dữ liệu cho loại vàng: '{gold_type}'. (Nếu đây là lỗi cache, vui lòng 'Clear cache')")
-    st.stop() # Dừng lại TRƯỚC KHI tính min/max
+    st.warning(f"Không tìm thấy dữ liệu cho loại vàng: '{gold_type}'.")
+    st.stop()
 
-# 3. TÍNH DỮ LIỆU MỚI NHẤT (Bây giờ đã an toàn)
-if 'Thời gian cập nhật' in df_type_filtered.columns:
-    latest = df_type_filtered.sort_values(by="Thời gian cập nhật").iloc[-1]
-else:
-    latest = df_type_filtered.sort_values(by="Ngày").iloc[-1]
-
-st.markdown(f"<h2>💎 Dữ liệu mới nhất cho: {gold_type}</h2>", unsafe_allow_html=True)
-col1, col2, col3 = st.columns(3)
-with col1: st.metric("Ngày", latest['Ngày'].strftime("%d-%m-%Y"))
-with col2: st.metric("Giá mua", f"{latest['Mua vào']:,.0f} VND")
-with col3: st.metric("Giá bán", f"{latest['Bán ra']:,.0f} VND")
-
-# 4. TẠO BỘ LỌC NGÀY (Bây giờ đã an toàn)
 min_date = df_type_filtered["Ngày"].min().to_pydatetime()
-max_date = df_type_filtered["Ngày"].max().to_pydatetime() 
-
-# === Dòng 297 (Lỗi ở đây) ===
-date_range = st.sidebar.date_input("🗓️ Chọn khoảng ngày:", (min_date, max_date), min_value=min_date, max_date=max_date)
+max_date = df_type_filtered["Ngày"].max().to_pydatetime()
+date_range = st.sidebar.date_input("🗓️ Chọn khoảng ngày:", (min_date, max_date), min_value=min_date, max_value=max_date)
 
 if len(date_range) != 2:
     st.sidebar.error("Bạn phải chọn khoảng ngày (bắt đầu và kết thúc).")
     st.stop()
 
-# 5. TẠO DF_FINAL (ĐỂ VẼ BIỂU ĐỒ)
 start_date, end_date = date_range
 df_final = df_type_filtered[
     (df_type_filtered["Ngày"] >= pd.to_datetime(start_date)) &
@@ -309,7 +292,21 @@ df_final = df_type_filtered[
 if df_final.empty:
     st.warning(f"Không tìm thấy dữ liệu cho '{gold_type}' trong khoảng ngày đã chọn.")
     st.stop()
-    
+
+# ==========================
+# 💎 GIÁ MỚI NHẤT
+# ==========================
+if 'Thời gian cập nhật' in df_final.columns:
+    latest = df_final.sort_values(by="Thời gian cập nhật").iloc[-1]
+else:
+    latest = df_final.iloc[-1]
+
+st.markdown(f"<h2>💎 Dữ liệu mới nhất cho: {gold_type}</h2>", unsafe_allow_html=True)
+col1, col2, col3 = st.columns(3)
+with col1: st.metric("Ngày", latest['Ngày'].strftime("%d-%m-%Y"))
+with col2: st.metric("Giá mua", f"{latest['Mua vào']:,.0f} VND")
+with col3: st.metric("Giá bán", f"{latest['Bán ra']:,.0f} VND")
+
 # ==========================
 # 📊 TABS
 # ==========================
@@ -408,7 +405,3 @@ with tab_ml:
             fig_forecast = px.line(df_final, x="Ngày", y="Bán ra", title=f"Giá BÁN (Lịch sử & Dự báo)", markers=True)
             fig_forecast.add_scatter(x=df_forecast['Ngày'], y=df_forecast['Dự báo'], mode='lines', name=f'Dự báo ({best_name})')
             st.plotly_chart(fig_forecast, use_container_width=True)
-
-
-
-
