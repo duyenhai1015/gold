@@ -1,0 +1,33 @@
+name: Run Daily Backfill (PNJ, SJC, DOJI)
+
+on:
+  schedule:
+    # Chạy vào 00:00 UTC mỗi ngày (tức 7:00 Sáng giờ Việt Nam)
+    - cron: '0 0 * * *'
+  workflow_dispatch:
+    # Thêm nút "Run workflow" để chạy thủ công nếu cần
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11' 
+
+      - name: Install dependencies (HEAVY)
+        run: |
+          # SỬA: Dùng file requirements.txt CHÍNH (vì cần PANDAS)
+          pip install -r requirements.txt
+      
+      - name: Run Backfill Script
+        env:
+          # Lấy Secret bạn đã tạo
+          MONGODB_ATLAS_URI: ${{ secrets.MONGODB_ATLAS_URI }}
+        run: |
+          python backfill_data.py
