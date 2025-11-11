@@ -268,13 +268,10 @@ else:
 df_brand_filtered = df_all[df_all["Thương hiệu"] == source].copy()
 available_types = sorted(df_brand_filtered["Loại vàng"].unique())
 gold_type = st.sidebar.selectbox("🎗️ Chọn loại vàng:", available_types)
-
-# === SỬA LỖI NAMEERROR BẰNG CÁCH ĐỊNH NGHĨA BIẾN Ở ĐÂY ===
 df_type_filtered = df_brand_filtered[df_brand_filtered["Loại vàng"] == gold_type].copy()
-# === HẾT SỬA LỖI ===
 
 # 2. CẦU DAO AN TOÀN (SỬA LỖI V5.9)
-# Bây giờ dòng này (trước đây là 269) đã an toàn
+# PHẢI KIỂM TRA RỖNG NGAY SAU KHI LỌC
 if df_type_filtered.empty:
     st.warning(f"Không tìm thấy dữ liệu cho loại vàng: '{gold_type}'. (Nếu đây là lỗi cache, vui lòng 'Clear cache')")
     st.stop() # Dừng lại TRƯỚC KHI tính min/max
@@ -294,6 +291,8 @@ with col3: st.metric("Giá bán", f"{latest['Bán ra']:,.0f} VND")
 # 4. TẠO BỘ LỌC NGÀY (Bây giờ đã an toàn)
 min_date = df_type_filtered["Ngày"].min().to_pydatetime()
 max_date = df_type_filtered["Ngày"].max().to_pydatetime() 
+
+# === Dòng 297 (Lỗi ở đây) ===
 date_range = st.sidebar.date_input("🗓️ Chọn khoảng ngày:", (min_date, max_date), min_value=min_date, max_date=max_date)
 
 if len(date_range) != 2:
@@ -409,6 +408,7 @@ with tab_ml:
             fig_forecast = px.line(df_final, x="Ngày", y="Bán ra", title=f"Giá BÁN (Lịch sử & Dự báo)", markers=True)
             fig_forecast.add_scatter(x=df_forecast['Ngày'], y=df_forecast['Dự báo'], mode='lines', name=f'Dự báo ({best_name})')
             st.plotly_chart(fig_forecast, use_container_width=True)
+
 
 
 
