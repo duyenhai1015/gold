@@ -1,4 +1,4 @@
-# backfill_data.py (V2.1 - Sửa lỗi datetime.UTC)
+# backfill_data.py (V2.2 - Đồng bộ logic cào + Sửa lỗi UTC)
 
 import pandas as pd
 import random
@@ -14,15 +14,12 @@ import os
 # =============================================
 def connect_mongo():
     MONGO_URI = os.environ.get("MONGODB_ATLAS_URI")
-    
     if not MONGO_URI:
         print("❌ LỖI: Biến môi trường MONGODB_ATLAS_URI chưa được thiết lập.")
-        exit(1) # Báo lỗi cho GitHub Actions
-        
+        exit(1) 
     client = MongoClient(MONGO_URI)
     db = client["gold_pipeline"]
     collection = db["gold_prices"]
-    
     print("🟡 Đang tạo Unique Index (để chống trùng lặp)...")
     try:
         collection.create_index(
@@ -31,13 +28,13 @@ def connect_mongo():
         )
     except Exception as e:
         print(f"ℹ️ Lỗi khi tạo index (có thể đã tồn tại, không sao): {e}")
-
     return collection
 
 # =============================================
 # 🟡 PNJ GOLD GENERATOR
 # =============================================
 def create_pnj_data(start_date, end_date):
+    # (Giữ nguyên logic PNJ)
     gold_types = [
         "Vàng miếng SJC 999.9", "Nhẫn Trơn PNJ 999.9", "Vàng Kim Bảo 999.9",
         "Vàng Phúc Lộc Tài 999.9", "Vàng PNJ - Phượng Hoàng", "Vàng nữ trang 999.9",
@@ -95,6 +92,7 @@ def create_pnj_data(start_date, end_date):
 # 🟢 SJC GOLD GENERATOR
 # =============================================
 def create_sjc_data(start_date, end_date):
+    # (Giữ nguyên logic SJC)
     sjc_types = [
         "Vàng SJC 1L, 10L, 1KG", "Vàng SJC 5 chỉ", "Vàng SJC 0.5 chỉ, 1 chỉ, 2 chỉ",
         "Vàng nhẫn SJC 99,99% 1 chỉ, 2 chỉ, 5 chỉ", "Nữ trang 99,99%", "Nữ trang 99%",
@@ -138,37 +136,55 @@ def create_sjc_data(start_date, end_date):
     return data
 
 # =============================================
-# 🔴 DOJI CRAWLER (REAL + SIMULATED)
+# 🔴 DOJI CRAWLER (LOGIC V2.2 - ĐÃ ĐỒNG BỘ)
 # =============================================
 def get_real_doji_prices():
-    print("🔴 Lấy giá thật từ DOJI...")
+    print("🔴 Lấy giá thật từ DOJI (dùng logic đã đồng bộ V2.2)...")
     url = "https://giavang.doji.vn/"
     headers = {"User-Agent": "Mozilla/5.0"}
+    
     try:
         r = requests.get(url, headers=headers, timeout=10)
         soup = BeautifulSoup(r.text, "html.parser")
         table = soup.find("table")
+        
         if not table:
             raise Exception("Không tìm thấy bảng giá trên trang DOJI")
+
         prices = {}
         for row in table.find_all("tr")[1:]:
             cols = [c.get_text(strip=True).replace(",", "").replace(".", "") for c in row.find_all("td")]
+            
             if len(cols) >= 3:
                 try:
-                    prices[cols[0]] = {"mua": int(cols[1]), "bán": int(cols[2])}
+                    loai_vang = cols[0]
+                    mua = int(cols[1])
+                    ban = int(cols[2])
+                    prices[loai_vang] = {"mua": mua, "bán": ban}
                 except:
                     continue
+        
+        if not prices: # Nếu bảng rỗng
+            raise Exception("Bảng DOJI rỗng, dùng dữ liệu giả.")
+            
         return prices
+        
     except Exception as e:
         print(f"❌ Lỗi khi cào DOJI, dùng dữ liệu giả: {e}")
+        # Trả về dữ liệu giả nếu cào lỗi
         return {
-            "Vàng SJC": {"mua": 147500000, "bán": 149500000},
+            "Vàng SJC (M.L)": {"mua": 147500000, "bán": 149500000},
             "Vàng nhẫn DOJI": {"mua": 146200000, "bán": 148700000}
         }
 
 def create_doji_data(start_date, end_date):
-    real_today = get_real_doji_prices()
-    print("🔴 Đang tạo dữ liệu DOJI...")
+    real_today = get_real_doji_prices() # <-- Sẽ chạy logic V2.2
+    
+    # Nếu 'real_today' chỉ trả về 2 loại vàng giả, thì nó sẽ tạo
+    # dữ liệu lịch sử cho 2 loại đó.
+    # Nếu nó cào được 10 loại, nó sẽ tạo cho 10 loại.
+    
+    print("🔴 Đang tạo dữ liệu DOJI (dựa trên mồi)...")
     data = []
     current_date = start_date
     while current_date <= end_date:
@@ -192,7 +208,6 @@ def create_doji_data(start_date, end_date):
 # 🚀 MAIN PROCESS
 # =============================================
 def main():
-    # Lấy 3 năm dữ liệu tính đến ngày hôm qua
     end_date = datetime.now() - timedelta(days=1)
     start_date = datetime(end_date.year - 3, end_date.month, end_date.day) 
     
@@ -202,7 +217,7 @@ def main():
     all_data = []
     all_data.extend(create_pnj_data(start_date, end_date))
     all_data.extend(create_sjc_data(start_date, end_date))
-    all_data.extend(create_doji_data(start_date, end_date))
+    all_data.extend(create_doji_data(start_date, end_date)) # <-- Sẽ chạy V2.2
 
     if all_data:
         print(f"Tổng cộng có {len(all_data)} bản ghi, đang nạp (sẽ bỏ qua nếu trùng)...")
@@ -216,7 +231,6 @@ def main():
                 print(f"❌ Lỗi nghiêm trọng khi nạp dữ liệu: {e}")
     else:
         print("❌ Không có dữ liệu để lưu.")
-
 
 if __name__ == "__main__":
     main()
